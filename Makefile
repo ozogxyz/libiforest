@@ -38,6 +38,22 @@ cdemo: $(LIB)
 shared: | build
 	$(FC) -O2 -fPIC -fopenmp -Jbuild -shared iforest.f90 c_api.f90 -o build/libiforest.so
 
+# Static: C program + the .a, pulling the gfortran runtime.
+cdemo-static: $(LIB)
+	gcc examples/example.c -Iinclude build/libiforest.a -lgfortran -lm -o build/cdemo_static
+	./build/cdemo_static
+
+# Dynamic: link against the .so, found at runtime via LD_LIBRARY_PATH.
+cdemo-dyn: shared
+	gcc examples/example.c -Iinclude -Lbuild -liforest -o build/cdemo_dyn
+	LD_LIBRARY_PATH=build ./build/cdemo_dyn
+
+# Multiple forests scored concurrently (per-handle thread safety).
+threads: $(LIB)
+	gcc -c examples/threads.c -Iinclude -fopenmp -o build/threads.o
+	$(FC) $(FFLAGS) -fopenmp build/threads.o $(LIB) -o build/threads
+	./build/threads
+
 test: $(LIB)
 	$(FC) $(FFLAGS) test/check.f90 $(LIB) -o build/check && ./build/check
 
@@ -49,4 +65,4 @@ check: test stress
 clean:
 	rm -rf build $(BIN)
 
-.PHONY: all run cdemo shared test stress check clean
+.PHONY: all run cdemo shared cdemo-static cdemo-dyn threads test stress check clean
