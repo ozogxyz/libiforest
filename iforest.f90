@@ -70,7 +70,7 @@ contains
     real(dp), intent(in) :: X(:,:)
     integer, intent(in) :: n_samples
     integer, intent(in), optional :: psi, n_trees
-    integer :: i, hlim, ps, nt
+    integer :: i, hlim, ps, nt, k
     integer, allocatable :: idx(:)
     type(TreeNode), pointer :: root
 
@@ -96,12 +96,17 @@ contains
     forest%n_trees = nt
     forest%psi = ps
     forest%n_features = size(X, 2)
-    hlim = ceiling(log(real(ps, dp)) / log(2.0_dp))
+    hlim = 0           ! ceil(log2(ps)), computed in integer math (no FP rounding)
+    k = 1
+    do while (k < ps)
+       k = k * 2
+       hlim = hlim + 1
+    end do
 
     ! Independent trees; each thread gets its own idx/root and RNG state.
     !$omp parallel default(shared) private(i, idx, root)
     allocate(idx(ps))
-    !$omp do schedule(static)
+    !$omp do schedule(dynamic)
     do i = 1, nt
        call subsample(n_samples, ps, idx)
        root => build_tree(X, idx, 0, hlim)
@@ -130,15 +135,27 @@ contains
     real(dp) :: c_psi
     real(dp), allocatable :: XT(:,:), avg_h(:)
 
+    if (n_samples > size(X, 1)) then
+       write(error_unit, '(a)') "predict_scores: n_samples exceeds rows of X"
+       error stop 1
+    end if
+    if (size(scores) < n_samples) then
+       write(error_unit, '(a)') "predict_scores: scores array too small"
+       error stop 1
+    end if
+
+    ! Transpose once, then score tree-by-tree so each tree's arrays stay
+    ! cache-resident while all samples stream past. A samples-outer loop was
+    ! measured ~2x slower here: it touches all trees per sample and thrashes them.
     m = forest%n_features
     allocate(XT(m, n_samples), avg_h(n_samples))
-    do i = 1, n_samples              ! transpose so each sample's features are contiguous
+    do i = 1, n_samples
        XT(:, i) = X(i, 1:m)
     end do
 
     avg_h = 0.0_dp
     !$omp parallel do reduction(+:avg_h) schedule(static)
-    do j = 1, forest%n_trees         ! one tree stays cache-resident across all samples
+    do j = 1, forest%n_trees
        call accumulate_tree(forest%trees(j), XT, n_samples, avg_h)
     end do
     !$omp end parallel do
@@ -150,8 +167,8 @@ contains
     deallocate(XT, avg_h)
   end subroutine
 
-  ! Descend every sample through one tree. The flat tree arrays stay hot while
-  ! the sample columns of XT stream past. This is the hot path.
+  ! Score every sample through one tree, accumulating path lengths. The flat tree
+  ! arrays stay hot while XT's columns stream past. Hot path.
   subroutine accumulate_tree(t, XT, n, avg_h)
     type(Tree), intent(in) :: t
     real(dp), intent(in) :: XT(:,:)
@@ -183,8 +200,14 @@ contains
     real :: rtmp
     integer, allocatable :: perm(:)
 
-    if (size(sample_idx) /= psi) stop "sample_idx wrong size"
-    if (psi > n_samples) stop "subsample: psi > n_samples"
+    if (size(sample_idx) /= psi) then
+       write(error_unit, '(a)') "subsample: sample_idx wrong size"
+       error stop 1
+    end if
+    if (psi > n_samples) then
+       write(error_unit, '(a)') "subsample: psi > n_samples"
+       error stop 1
+    end if
 
     allocate(perm(n_samples))
     perm = [(i, i = 1, n_samples)]
@@ -208,7 +231,7 @@ contains
     integer, intent(in) :: height, height_limit
     type(TreeNode), pointer :: node
     integer :: n_features, split_feature, i
-    real(dp) :: r, fmin, fmax, split_value
+    real(dp) :: r, fmin, fmax, split_value, v
     integer :: left_count, right_count
     integer, allocatable :: left_idx(:), right_idx(:)
 
@@ -224,8 +247,13 @@ contains
     call random_number(r)
     split_feature = min(n_features, 1 + int(r * n_features))
 
-    fmin = minval(X(idx, split_feature))
-    fmax = maxval(X(idx, split_feature))
+    fmin = X(idx(1), split_feature)
+    fmax = fmin
+    do i = 2, size(idx)
+       v = X(idx(i), split_feature)
+       if (v < fmin) fmin = v
+       if (v > fmax) fmax = v
+    end do
     if (fmax == fmin) then
        node%is_leaf = .true.
        node%size = size(idx)
