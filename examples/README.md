@@ -21,7 +21,7 @@ By hand:
 
 | file | target | shows |
 |------|--------|-------|
-| `example.c` | `make cdemo` / `cdemo-static` / `cdemo-dyn` | train / score, static + dynamic linking |
+| `basic.c`   | `make cdemo` / `cdemo-static` / `cdemo-dyn` | train / score, static + dynamic linking |
 | `threads.c` | `make threads` | one forest per thread |
 
 ## Julia

@@ -1,10 +1,8 @@
-# libiforest from Julia (ccall). Run `make shared` first, then this file.
+# Train a forest and score a batch: 100 inliers plus one outlier.
 include(joinpath(@__DIR__, "..", "wrappers", "iforest.jl"))
 using .IForest
 
-X = vcat(randn(500, 4), [8.0 8.0 8.0 8.0])    # 500 inliers + 1 outlier
-
-f = IForest.fit(X; n_trees = 100)
+X = vcat(rand(100, 2), [5.0 5.0])          # 100 inliers + 1 outlier
+f = IForest.fit(X)                         # n_trees = 100, psi = auto
 s = IForest.score(f, X)
-println("inlier mean = ", round(sum(s[1:500]) / 500, digits = 3),
-        "   outlier = ", round(s[end], digits = 3))
+println("inlier ", round(s[1], digits=3), "   outlier ", round(s[end], digits=3))

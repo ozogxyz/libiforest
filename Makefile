@@ -31,7 +31,7 @@ run: $(BIN)
 	./$(BIN)
 
 cdemo: $(LIB)
-	gcc -c examples/example.c -Iinclude -o build/example.o
+	gcc -c examples/basic.c -Iinclude -o build/example.o
 	$(FC) $(FFLAGS) build/example.o $(LIB) -o build/cdemo
 	./build/cdemo
 
@@ -40,12 +40,12 @@ shared: | build
 
 # Static: C program + the .a, pulling the gfortran runtime.
 cdemo-static: $(LIB)
-	gcc examples/example.c -Iinclude build/libiforest.a -lgfortran -lm -o build/cdemo_static
+	gcc examples/basic.c -Iinclude build/libiforest.a -lgfortran -lm -o build/cdemo_static
 	./build/cdemo_static
 
 # Dynamic: link against the .so, found at runtime via LD_LIBRARY_PATH.
 cdemo-dyn: shared
-	gcc examples/example.c -Iinclude -Lbuild -liforest -o build/cdemo_dyn
+	gcc examples/basic.c -Iinclude -Lbuild -liforest -o build/cdemo_dyn
 	LD_LIBRARY_PATH=build ./build/cdemo_dyn
 
 # Multiple forests scored concurrently (per-handle thread safety).

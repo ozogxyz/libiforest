@@ -17,10 +17,10 @@ anomalies. For labels, threshold it yourself (`score >= t`).
 
 ## Fortran
 
-Save as `demo.f90`:
+[`examples/basic.f90`](examples/basic.f90):
 
 ```fortran
-program demo
+program basic
   use iforest, only: dp, IsolationForest, train_forest, predict_scores, free_forest
   implicit none
   type(IsolationForest) :: forest
@@ -38,15 +38,15 @@ program demo
   print '(a,f5.3,a,f5.3)', "inlier ", s(1), "   outlier ", s(101)
 
   call free_forest(forest)
-end program demo
+end program basic
 ```
 
-    gfortran -O2 -Jbuild demo.f90 build/libiforest.a -o demo && ./demo
+    gfortran -O2 -Jbuild examples/basic.f90 build/libiforest.a -o demo && ./demo
     # inlier 0.46x   outlier 0.90x
 
 ## C
 
-Save as `demo.c`:
+[`examples/basic.c`](examples/basic.c):
 
 ```c
 #include <stdio.h>
@@ -77,15 +77,15 @@ int main(void)
 }
 ```
 
-    gcc demo.c -Iinclude build/libiforest.a -lgfortran -lm -o demo && ./demo
-    # static link; for the shared lib: gcc demo.c -Iinclude -Lbuild -liforest && LD_LIBRARY_PATH=build ./a.out
+    gcc examples/basic.c -Iinclude build/libiforest.a -lgfortran -lm -o demo && ./demo
+    # shared instead: gcc examples/basic.c -Iinclude -Lbuild -liforest -o demo && LD_LIBRARY_PATH=build ./demo
 
 ## Julia
 
-Save as `demo.jl` (needs `make shared`):
+[`examples/basic.jl`](examples/basic.jl) (needs `make shared`):
 
 ```julia
-include("wrappers/iforest.jl")
+include(joinpath(@__DIR__, "..", "wrappers", "iforest.jl"))
 using .IForest
 
 X = vcat(rand(100, 2), [5.0 5.0])          # 100 inliers + 1 outlier
@@ -94,7 +94,7 @@ s = IForest.score(f, X)
 println("inlier ", round(s[1], digits=3), "   outlier ", round(s[end], digits=3))
 ```
 
-    julia demo.jl
+    julia examples/basic.jl
 
 ## Build targets
 
