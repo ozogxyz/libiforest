@@ -33,3 +33,8 @@ build/
 *.exe
 *.out
 *.app
+
+# python / benchmark artifacts
+.venv/
+__pycache__/
+bench/*.txt
