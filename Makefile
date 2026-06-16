@@ -35,6 +35,9 @@ cdemo: $(LIB)
 	$(FC) $(FFLAGS) build/example.o $(LIB) -o build/cdemo
 	./build/cdemo
 
+shared: | build
+	$(FC) -O2 -fPIC -fopenmp -Jbuild -shared iforest.f90 c_api.f90 -o build/libiforest.so
+
 test: $(LIB)
 	$(FC) $(FFLAGS) test/check.f90 $(LIB) -o build/check && ./build/check
 
@@ -46,4 +49,4 @@ check: test stress
 clean:
 	rm -rf build $(BIN)
 
-.PHONY: all run cdemo test stress check clean
+.PHONY: all run cdemo shared test stress check clean

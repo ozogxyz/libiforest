@@ -10,7 +10,9 @@ and builds to `libiforest.a`.
     make run        # build and run the demo
     make test       # sanity test
     make stress     # stress suite (runtime-checked)
-    make OMP=1      # build with OpenMP (parallel scoring)
+    make cdemo      # build and run the C example
+    make shared     # build/libiforest.so (C ABI / Python / Julia)
+    make OMP=1      # build with OpenMP (parallel train + score)
     make clean
 
 ## Use
@@ -43,6 +45,19 @@ iforest_free(h);
 
 `make cdemo` builds and runs `examples/example.c`. Link against
 `build/libiforest.a` with `gfortran` (or `gcc ... -lgfortran -lm`).
+
+### Python and Julia
+
+`make shared` builds `build/libiforest.so`; thin wrappers live in `wrappers/`:
+
+```python
+from wrappers.iforest import IsolationForest
+f = IsolationForest().fit(X)          # X: (n, m) array
+s = f.score(X)
+lab = f.predict(X, threshold=0.6)
+```
+
+Julia is the same shape — `wrappers/iforest.jl` (then `julia wrappers/demo.jl`).
 
 ## License
 

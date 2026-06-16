@@ -146,14 +146,21 @@ contains
     forest%n_features = size(X, 2)
 
     hlim = ceiling(log(real(psi, dp)) / log(2.0_dp))
+
+    ! Trees are independent; build them in parallel (each thread its own idx/root
+    ! and its own RNG state). Serial when not compiled with -fopenmp.
+    !$omp parallel default(shared) private(i, idx, root)
     allocate(idx(psi))
+    !$omp do schedule(static)
     do i = 1, n_trees
        call subsample(n_samples, psi, idx)
        root => build_tree(X, idx, 0, hlim)
        call flatten(root, forest%trees(i))
        call free_node(root)
     end do
+    !$omp end do
     deallocate(idx)
+    !$omp end parallel
   end subroutine
 
   subroutine free_forest(forest)
