@@ -1,6 +1,6 @@
 program stress
   use iforest, only: dp, IsolationForest, train_forest, predict_scores, predict, &
-                     free_forest, fit, get_score, release
+                     free_forest
   implicit none
 
   call test_auc()
@@ -9,7 +9,6 @@ program stress
   call test_extremes()
   call test_multi_instance()
   call test_refit_loop()
-  call test_singleton()
   call test_predict()
 
   print *, "STRESS OK"
@@ -229,27 +228,6 @@ contains
     end do
     call free_forest(f)
     print *, "ok: refit loop (300x, free-on-refit)"
-  end subroutine
-
-  subroutine test_singleton()
-    real(dp) :: X(500,3), sn, so
-    integer :: i, j, k
-    real(dp) :: r
-
-    do i = 1, 500
-       do j = 1, 3
-          call random_number(r); X(i,j) = r
-       end do
-    end do
-    do k = 1, 50
-       call fit(X, 500, 3)
-    end do
-    call get_score([0.5_dp, 0.5_dp, 0.5_dp], 3, sn)
-    call get_score([9.0_dp, 9.0_dp, 9.0_dp], 3, so)
-    call assert(finite(sn) .and. finite(so), "singleton finite")
-    call assert(so > sn, "singleton outlier scored higher")
-    call release()
-    print *, "ok: singleton (50x refit)"
   end subroutine
 
   ! 200 inliers + 10 far outliers; predict by contamination and by threshold.

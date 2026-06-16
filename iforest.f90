@@ -31,7 +31,6 @@ module iforest
 
   public :: dp, IsolationForest
   public :: train_forest, predict_scores, predict, free_forest
-  public :: fit, get_score, release
 
   ! Transient node used only while a tree is being built; the finished tree is
   ! flattened into contiguous arrays (Tree) and these nodes are freed.
@@ -61,99 +60,50 @@ module iforest
      integer :: n_features
   end type IsolationForest
 
-  ! One global model for the convenience API (fit/get_score/release).
-  ! Not thread-safe, and a second fit replaces the first. For multiple
-  ! models or threaded use, call train_forest/predict_scores on your own
-  ! IsolationForest instance.
-  type(IsolationForest), save :: model
-
 contains
 
-  ! ---- convenience API over one global model ------------------------------
-
-  ! Train the global model on X (n rows = samples, m columns = features).
-  ! n_trees defaults to 100, psi (subsample size) to min(256, n).
-  subroutine fit(X, n, m, n_trees, psi)
-    real(dp), intent(in) :: X(n, m)
-    integer, intent(in) :: n, m
-    integer, intent(in), optional :: n_trees, psi
-    integer :: nt, ps
-
-    if (n < 2) then
-       write(error_unit, '(a)') "fit: need at least 2 samples"
-       error stop 1
-    end if
-
-    ps = min(256, n)
-    if (present(psi)) ps = psi
-    nt = 100
-    if (present(n_trees)) nt = n_trees
-
-    if (ps < 2 .or. ps > n) then
-       write(error_unit, '(a)') "fit: psi must be in [2, n]"
-       error stop 1
-    end if
-    if (nt < 1) then
-       write(error_unit, '(a)') "fit: n_trees must be >= 1"
-       error stop 1
-    end if
-
-    call train_forest(model, X, n, ps, nt)
-  end subroutine
-
-  ! Score one m-feature point. score is in (0, 1]: ~0.5 nominal, -> 1 anomalous.
-  subroutine get_score(x, m, score)
-    real(dp), intent(in) :: x(m)
-    integer, intent(in) :: m
-    real(dp), intent(out) :: score
-    real(dp) :: tmp(1, m)
-    real(dp) :: out(1)
-
-    if (.not. allocated(model%trees)) then
-       write(error_unit, '(a)') "get_score: call fit first"
-       error stop 1
-    end if
-    if (m /= model%n_features) then
-       write(error_unit, '(a)') "get_score: feature count differs from fit"
-       error stop 1
-    end if
-
-    tmp(1,:) = x(:)
-    call predict_scores(model, tmp, 1, out)
-    score = out(1)
-  end subroutine
-
-  ! Free the global model.
-  subroutine release()
-    call free_forest(model)
-  end subroutine
-
-  ! ---- core type-based API ------------------------------------------------
-
+  ! Train `forest` on X (rows = samples, columns = features). n_trees defaults to
+  ! 100, psi (subsample size per tree) to min(256, n_samples). Trees are built in
+  ! parallel under -fopenmp. A prior model in `forest` is replaced.
   subroutine train_forest(forest, X, n_samples, psi, n_trees)
     type(IsolationForest), intent(inout) :: forest
     real(dp), intent(in) :: X(:,:)
-    integer, intent(in) :: n_samples, psi, n_trees
-    integer :: i, hlim
+    integer, intent(in) :: n_samples
+    integer, intent(in), optional :: psi, n_trees
+    integer :: i, hlim, ps, nt
     integer, allocatable :: idx(:)
     type(TreeNode), pointer :: root
 
+    if (n_samples < 2) then
+       write(error_unit, '(a)') "train_forest: need at least 2 samples"
+       error stop 1
+    end if
+    ps = min(256, n_samples)
+    if (present(psi)) ps = psi
+    nt = 100
+    if (present(n_trees)) nt = n_trees
+    if (ps < 2 .or. ps > n_samples) then
+       write(error_unit, '(a)') "train_forest: psi must be in [2, n_samples]"
+       error stop 1
+    end if
+    if (nt < 1) then
+       write(error_unit, '(a)') "train_forest: n_trees must be >= 1"
+       error stop 1
+    end if
+
     call free_forest(forest)
-
-    allocate(forest%trees(n_trees))
-    forest%n_trees = n_trees
-    forest%psi = psi
+    allocate(forest%trees(nt))
+    forest%n_trees = nt
+    forest%psi = ps
     forest%n_features = size(X, 2)
+    hlim = ceiling(log(real(ps, dp)) / log(2.0_dp))
 
-    hlim = ceiling(log(real(psi, dp)) / log(2.0_dp))
-
-    ! Trees are independent; build them in parallel (each thread its own idx/root
-    ! and its own RNG state). Serial when not compiled with -fopenmp.
+    ! Independent trees; each thread gets its own idx/root and RNG state.
     !$omp parallel default(shared) private(i, idx, root)
-    allocate(idx(psi))
+    allocate(idx(ps))
     !$omp do schedule(static)
-    do i = 1, n_trees
-       call subsample(n_samples, psi, idx)
+    do i = 1, nt
+       call subsample(n_samples, ps, idx)
        root => build_tree(X, idx, 0, hlim)
        call flatten(root, forest%trees(i))
        call free_node(root)
@@ -163,11 +113,14 @@ contains
     !$omp end parallel
   end subroutine
 
+  ! Free a forest. Safe to call on an already-free forest.
   subroutine free_forest(forest)
     type(IsolationForest), intent(inout) :: forest
     if (allocated(forest%trees)) deallocate(forest%trees)
   end subroutine
 
+  ! Continuous anomaly score for each of the n_samples rows of X, written to
+  ! scores(1:n_samples). score is in (0, 1]: ~0.5 nominal, -> 1 more anomalous.
   subroutine predict_scores(forest, X, n_samples, scores)
     type(IsolationForest), intent(in) :: forest
     real(dp), intent(in) :: X(:,:)
@@ -197,8 +150,9 @@ contains
     deallocate(XT, avg_h)
   end subroutine
 
-  ! Binary anomaly labels (1 = anomaly, 0 = normal). With `threshold`, flag
-  ! score >= threshold. With `contamination`, flag that top fraction. Else 0.5.
+  ! Binary anomaly labels into labels(1:n_samples): 1 = anomaly, 0 = normal.
+  ! With `threshold`, flag score >= threshold. With `contamination`, flag that
+  ! top fraction. With neither, threshold defaults to 0.5.
   subroutine predict(forest, X, n_samples, labels, threshold, contamination)
     type(IsolationForest), intent(in) :: forest
     real(dp), intent(in) :: X(:,:)

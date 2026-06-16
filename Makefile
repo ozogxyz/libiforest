@@ -54,6 +54,17 @@ threads: $(LIB)
 	$(FC) $(FFLAGS) -fopenmp build/threads.o $(LIB) -o build/threads
 	./build/threads
 
+cdemo-predict: $(LIB)
+	gcc examples/predict.c -Iinclude build/libiforest.a -lgfortran -lm -o build/cdemo_predict
+	./build/cdemo_predict
+
+# Build and run every Fortran example.
+examples: $(LIB)
+	@for ex in basic predict multi params; do \
+	  echo "--- examples/$$ex.f90 ---"; \
+	  $(FC) $(FFLAGS) examples/$$ex.f90 $(LIB) -o build/$$ex && ./build/$$ex; \
+	done
+
 test: $(LIB)
 	$(FC) $(FFLAGS) test/check.f90 $(LIB) -o build/check && ./build/check
 
@@ -65,4 +76,4 @@ check: test stress
 clean:
 	rm -rf build $(BIN)
 
-.PHONY: all run cdemo shared cdemo-static cdemo-dyn threads test stress check clean
+.PHONY: all run cdemo shared cdemo-static cdemo-dyn cdemo-predict threads examples test stress check clean
