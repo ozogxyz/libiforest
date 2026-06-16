@@ -30,7 +30,7 @@ module iforest
   integer, parameter :: dp = kind(1.0d0)
 
   public :: dp, IsolationForest
-  public :: train_forest, predict_scores, predict, free_forest
+  public :: train_forest, predict_scores, free_forest
 
   ! Transient node used only while a tree is being built; the finished tree is
   ! flattened into contiguous arrays (Tree) and these nodes are freed.
@@ -148,46 +148,6 @@ contains
        scores(i) = 2.0_dp ** (-(avg_h(i) / forest%n_trees) / c_psi)
     end do
     deallocate(XT, avg_h)
-  end subroutine
-
-  ! Binary anomaly labels into labels(1:n_samples): 1 = anomaly, 0 = normal.
-  ! With `threshold`, flag score >= threshold. With `contamination`, flag that
-  ! top fraction. With neither, threshold defaults to 0.5.
-  subroutine predict(forest, X, n_samples, labels, threshold, contamination)
-    type(IsolationForest), intent(in) :: forest
-    real(dp), intent(in) :: X(:,:)
-    integer, intent(in) :: n_samples
-    integer, intent(out) :: labels(:)
-    real(dp), intent(in), optional :: threshold, contamination
-    real(dp), allocatable :: s(:), tmp(:)
-    real(dp) :: cut
-    integer :: i, k
-
-    allocate(s(n_samples))
-    call predict_scores(forest, X, n_samples, s)
-
-    if (present(threshold)) then
-       cut = threshold
-    else if (present(contamination)) then
-       allocate(tmp(n_samples))
-       tmp = s
-       call sort_asc(tmp)
-       k = n_samples - int(contamination * n_samples)
-       k = max(1, min(n_samples, k))
-       cut = tmp(k)
-       deallocate(tmp)
-    else
-       cut = 0.5_dp
-    end if
-
-    do i = 1, n_samples
-       if (s(i) >= cut) then
-          labels(i) = 1
-       else
-          labels(i) = 0
-       end if
-    end do
-    deallocate(s)
   end subroutine
 
   ! Descend every sample through one tree. The flat tree arrays stay hot while
@@ -362,44 +322,6 @@ contains
        call fill(node%right, t, pos)
     end if
   end subroutine fill
-
-  ! Heapsort, ascending. Used only to find the contamination quantile.
-  subroutine sort_asc(a)
-    real(dp), intent(inout) :: a(:)
-    integer :: n, i
-    real(dp) :: t
-
-    n = size(a)
-    do i = n / 2, 1, -1
-       call siftdown(a, i, n)
-    end do
-    do i = n, 2, -1
-       t = a(1); a(1) = a(i); a(i) = t
-       call siftdown(a, 1, i - 1)
-    end do
-  end subroutine
-
-  subroutine siftdown(a, start, last)
-    real(dp), intent(inout) :: a(:)
-    integer, intent(in) :: start, last
-    integer :: root, child
-    real(dp) :: t
-
-    root = start
-    do
-       child = 2 * root
-       if (child > last) exit
-       if (child < last) then
-          if (a(child) < a(child + 1)) child = child + 1
-       end if
-       if (a(root) < a(child)) then
-          t = a(root); a(root) = a(child); a(child) = t
-          root = child
-       else
-          exit
-       end if
-    end do
-  end subroutine
 
   pure function cfactor(n) result(res)
     integer, intent(in) :: n

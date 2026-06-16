@@ -4,7 +4,7 @@
 !------------------------------------------------------------------------------
 module iforest_c
   use iso_c_binding
-  use iforest, only: dp, IsolationForest, train_forest, predict_scores, predict, free_forest
+  use iforest, only: dp, IsolationForest, train_forest, predict_scores, free_forest
   implicit none
 
 contains
@@ -34,18 +34,6 @@ contains
     call c_f_pointer(handle, f)
     call predict_scores(f, to_fortran(Xc, n, m), n, s)
     scores = s
-  end subroutine
-
-  subroutine iforest_predict(handle, Xc, n, m, labels, threshold) bind(C, name="iforest_predict")
-    type(c_ptr), value :: handle
-    real(c_double), intent(in) :: Xc(n * m)
-    integer(c_int), value :: n, m
-    integer(c_int), intent(out) :: labels(n)
-    real(c_double), value :: threshold
-    type(IsolationForest), pointer :: f
-
-    call c_f_pointer(handle, f)
-    call predict(f, to_fortran(Xc, n, m), n, labels, threshold=threshold)
   end subroutine
 
   subroutine iforest_free(handle) bind(C, name="iforest_free")

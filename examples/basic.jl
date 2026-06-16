@@ -8,4 +8,3 @@ f = IForest.fit(X; n_trees = 100)
 s = IForest.score(f, X)
 println("inlier mean = ", round(sum(s[1:500]) / 500, digits = 3),
         "   outlier = ", round(s[end], digits = 3))
-println("anomalies (score > 0.6): ", sum(IForest.predict(f, X; threshold = 0.6)))

@@ -21,13 +21,7 @@ int main(void)
     printf("inlier  score = %.3f\n", s[0]);
     printf("outlier score = %.3f\n", s[n - 1]);
 
-    int *lab = malloc((size_t)n * sizeof(int));
-    iforest_predict(h, X, n, m, lab, 0.6);
-    int flagged = 0;
-    for (i = 0; i < n; i++) flagged += lab[i];
-    printf("flagged at 0.6 = %d, outlier label = %d\n", flagged, lab[n - 1]);
-
     iforest_free(h);
-    free(X); free(s); free(lab);
+    free(X); free(s);
     return 0;
 }

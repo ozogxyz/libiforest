@@ -21,10 +21,6 @@ iforest_t iforest_train(const double *X, int n, int m, int n_trees, int psi);
 /* Score n points (row-major) into scores[n]. Higher = more anomalous. */
 void iforest_score(iforest_t h, const double *X, int n, int m, double *scores);
 
-/* Label n points into labels[n]: 1 if score >= threshold, else 0. */
-void iforest_predict(iforest_t h, const double *X, int n, int m,
-                     int *labels, double threshold);
-
 /* Free a forest returned by iforest_train. */
 void iforest_free(iforest_t h);
 

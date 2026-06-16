@@ -28,16 +28,6 @@ function score(f::Forest, X::AbstractMatrix{<:Real})
     return s
 end
 
-function predict(f::Forest, X::AbstractMatrix{<:Real}; threshold::Real=0.5)
-    n, m = size(X)
-    Xt = Matrix{Float64}(transpose(X))
-    lab = Vector{Cint}(undef, n)
-    ccall((:iforest_predict, LIB), Cvoid,
-          (Ptr{Cvoid}, Ptr{Float64}, Cint, Cint, Ptr{Cint}, Float64),
-          f.h, Xt, n, m, lab, Float64(threshold))
-    return Int.(lab)
-end
-
 function free(f::Forest)
     if f.h != C_NULL
         ccall((:iforest_free, LIB), Cvoid, (Ptr{Cvoid},), f.h)

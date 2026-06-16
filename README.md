@@ -1,10 +1,10 @@
 # libiforest
 
 Isolation Forest anomaly detection as a small, dependency-free Fortran library —
-one file (`iforest.f90`), builds to `libiforest.a`, callable from Fortran, C,
-Python, and Julia. Faster and far leaner than scikit-learn's `IsolationForest`,
-with no Python or BLAS in the loop, so it drops straight into existing
-Fortran / HPC / native data pipelines.
+one file (`iforest.f90`), builds to `libiforest.a`, callable from Fortran, C, and
+Julia. Faster and far leaner than scikit-learn's `IsolationForest`, with no Python
+or BLAS in the loop, so it drops straight into existing Fortran / HPC / native
+data pipelines.
 
 ## Quickstart (Fortran)
 
@@ -19,21 +19,17 @@ call predict_scores(forest, X, n, scores)  ! score in (0,1], higher = more anoma
 call free_forest(forest)
 ```
 
-You own the `forest`: train it, score with it, free it. `predict` turns scores
-into binary labels by `threshold` or `contamination`. See [examples/](examples/)
-and the full [API reference](docs/API.md).
+You own the `forest`: train it, score with it, free it. For binary labels,
+threshold the scores (`scores >= t`). Each forest is independent, so one per
+thread is safe (see `examples/threads.c`). More in [examples/](examples/) and the
+[API reference](docs/API.md).
 
-## From C, Python, Julia
+## From C and Julia
 
 ```c
 iforest_t h = iforest_train(X, n, m, 100, 0);   /* row-major X */
 iforest_score(h, X, n, m, scores);
 iforest_free(h);
-```
-
-```python
-from iforest import IsolationForest          # wrappers/iforest.py, after `make shared`
-s = IsolationForest().fit(X).score(X)
 ```
 
 ```julia
@@ -47,7 +43,7 @@ s = IForest.score(IForest.fit(X), X)
     make examples   # build and run the Fortran examples
     make test       # quick sanity test
     make stress     # stress suite (runtime-checked)
-    make shared     # libiforest.so (for C / Python / Julia)
+    make shared     # libiforest.so (for C / Julia)
     make OMP=1      # parallel training and scoring (OpenMP)
     make clean
 
@@ -59,8 +55,7 @@ dynamic:
 
     gcc app.c -Iinclude -Lbuild -liforest -o app && LD_LIBRARY_PATH=build ./app
 
-Worked C targets: `make cdemo` / `cdemo-static` / `cdemo-dyn` / `cdemo-predict` /
-`threads`.
+Worked C targets: `make cdemo` / `cdemo-static` / `cdemo-dyn` / `threads`.
 
 ## Performance
 
@@ -74,12 +69,6 @@ Worked C targets: `make cdemo` / `cdemo-static` / `cdemo-dyn` / `cdemo-predict` 
 
 Same anomaly ranking as scikit-learn (Spearman 0.96, equal AUC on the
 breast-cancer benchmark in `bench/`).
-
-## Thread safety
-
-Every forest / handle is independent and holds no global state: give each thread
-its own, or share one read-only for concurrent scoring — both are safe. See
-`examples/threads.c`.
 
 ## License
 
