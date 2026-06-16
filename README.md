@@ -6,9 +6,11 @@ and builds to `libiforest.a`.
 
 ## Build
 
-    make        # build/libiforest.a and the demo
-    make test
-    make run
+    make            # build/libiforest.a and the demo
+    make run        # build and run the demo
+    make test       # sanity test
+    make stress     # stress suite (runtime-checked)
+    make OMP=1      # build with OpenMP (parallel scoring)
     make clean
 
 ## Use

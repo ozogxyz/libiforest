@@ -1,5 +1,8 @@
 FC     = gfortran
 FFLAGS = -O2 -Wall -Jbuild
+ifeq ($(OMP),1)
+  FFLAGS += -fopenmp
+endif
 
 LIB = build/libiforest.a
 BIN = build/iforest

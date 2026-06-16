@@ -177,9 +177,11 @@ contains
     end do
 
     avg_h = 0.0_dp
+    !$omp parallel do reduction(+:avg_h) schedule(static)
     do j = 1, forest%n_trees         ! one tree stays cache-resident across all samples
        call accumulate_tree(forest%trees(j), XT, n_samples, avg_h)
     end do
+    !$omp end parallel do
 
     c_psi = cfactor(forest%psi)
     do i = 1, n_samples
