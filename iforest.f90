@@ -33,6 +33,8 @@ module iforest
   public :: train_forest, predict_scores, free_forest
   public :: fit, get_score, release
 
+  ! Transient node used only while a tree is being built; the finished tree is
+  ! flattened into contiguous arrays (Tree) and these nodes are freed.
   type :: TreeNode
      logical                 :: is_leaf
      integer                 :: split_feature
@@ -42,8 +44,14 @@ module iforest
      integer                 :: size
   end type TreeNode
 
+  ! Flattened tree: parallel arrays in preorder. node 1 is the root; a leaf has
+  ! feat < 0 and left = right = 0. Cache- and branch-predictor-friendly.
   type :: Tree
-     type(TreeNode), pointer :: root => null()
+     integer,  allocatable :: feat(:)
+     real(dp), allocatable :: thr(:)
+     integer,  allocatable :: left(:)
+     integer,  allocatable :: right(:)
+     integer,  allocatable :: nsize(:)
   end type Tree
 
   type :: IsolationForest
@@ -126,8 +134,9 @@ contains
     type(IsolationForest), intent(inout) :: forest
     real(dp), intent(in) :: X(:,:)
     integer, intent(in) :: n_samples, psi, n_trees
-    integer :: i
+    integer :: i, hlim
     integer, allocatable :: idx(:)
+    type(TreeNode), pointer :: root
 
     call free_forest(forest)
 
@@ -136,25 +145,20 @@ contains
     forest%psi = psi
     forest%n_features = size(X, 2)
 
+    hlim = ceiling(log(real(psi, dp)) / log(2.0_dp))
     allocate(idx(psi))
     do i = 1, n_trees
        call subsample(n_samples, psi, idx)
-       forest%trees(i)%root => build_tree(X, idx, 0, ceiling(log(real(psi, dp))/log(2.0_dp)))
+       root => build_tree(X, idx, 0, hlim)
+       call flatten(root, forest%trees(i))
+       call free_node(root)
     end do
-
     deallocate(idx)
   end subroutine
 
   subroutine free_forest(forest)
     type(IsolationForest), intent(inout) :: forest
-    integer :: i
-
-    if (allocated(forest%trees)) then
-       do i = 1, size(forest%trees)
-          call free_node(forest%trees(i)%root)
-       end do
-       deallocate(forest%trees)
-    end if
+    if (allocated(forest%trees)) deallocate(forest%trees)
   end subroutine
 
   subroutine predict_scores(forest, X, n_samples, scores)
@@ -162,22 +166,53 @@ contains
     real(dp), intent(in) :: X(:,:)
     integer, intent(in) :: n_samples
     real(dp), intent(out) :: scores(:)
-    integer :: i, j
-    real(dp) :: h, avg_h, c_psi
+    integer :: i, j, m
+    real(dp) :: c_psi
+    real(dp), allocatable :: XT(:,:), avg_h(:)
+
+    m = forest%n_features
+    allocate(XT(m, n_samples), avg_h(n_samples))
+    do i = 1, n_samples              ! transpose so each sample's features are contiguous
+       XT(:, i) = X(i, 1:m)
+    end do
+
+    avg_h = 0.0_dp
+    do j = 1, forest%n_trees         ! one tree stays cache-resident across all samples
+       call accumulate_tree(forest%trees(j), XT, n_samples, avg_h)
+    end do
 
     c_psi = cfactor(forest%psi)
     do i = 1, n_samples
-       avg_h = 0.0_dp
-       do j = 1, forest%n_trees
-          h = path_length(forest%trees(j)%root, X(i,:), 0)
-          avg_h = avg_h + h
-       end do
-       avg_h = avg_h / forest%n_trees
-       scores(i) = 2.0_dp ** (-avg_h / c_psi)
+       scores(i) = 2.0_dp ** (-(avg_h(i) / forest%n_trees) / c_psi)
     end do
+    deallocate(XT, avg_h)
   end subroutine
 
-  ! ---- internals ----------------------------------------------------------
+  ! Descend every sample through one tree. The flat tree arrays stay hot while
+  ! the sample columns of XT stream past. This is the hot path.
+  subroutine accumulate_tree(t, XT, n, avg_h)
+    type(Tree), intent(in) :: t
+    real(dp), intent(in) :: XT(:,:)
+    integer, intent(in) :: n
+    real(dp), intent(inout) :: avg_h(:)
+    integer :: i, node, depth
+
+    do i = 1, n
+       node = 1
+       depth = 0
+       do while (t%feat(node) >= 0)
+          if (XT(t%feat(node), i) < t%thr(node)) then
+             node = t%left(node)
+          else
+             node = t%right(node)
+          end if
+          depth = depth + 1
+       end do
+       avg_h(i) = avg_h(i) + real(depth, dp) + cfactor(t%nsize(node))
+    end do
+  end subroutine accumulate_tree
+
+  ! ---- tree construction (transient pointer form) -------------------------
 
   subroutine subsample(n_samples, psi, sample_idx)
     integer, intent(in) :: n_samples, psi
@@ -271,27 +306,60 @@ contains
     deallocate(left_idx, right_idx)
   end function build_tree
 
-  recursive function path_length(node, x, depth) result(h)
-    type(TreeNode), pointer :: node
-    real(dp), intent(in) :: x(:)
-    integer, intent(in) :: depth
-    real(dp) :: h
+  recursive subroutine free_node(node)
+    type(TreeNode), pointer, intent(inout) :: node
+    if (.not. associated(node)) return
+    call free_node(node%left)
+    call free_node(node%right)
+    deallocate(node)
+  end subroutine free_node
 
-    if (node%is_leaf) then
-       if (node%size <= 1) then
-          h = depth * 1.0_dp
-       else
-          h = depth + cfactor(node%size)
-       end if
-       return
-    end if
+  ! ---- flatten the pointer tree into contiguous arrays --------------------
 
-    if (x(node%split_feature) < node%split_value) then
-       h = path_length(node%left, x, depth + 1)
+  subroutine flatten(root, t)
+    type(TreeNode), pointer, intent(in) :: root
+    type(Tree), intent(out) :: t
+    integer :: cnt, pos
+
+    cnt = count_nodes(root)
+    allocate(t%feat(cnt), t%thr(cnt), t%left(cnt), t%right(cnt), t%nsize(cnt))
+    pos = 0
+    call fill(root, t, pos)
+  end subroutine
+
+  recursive function count_nodes(node) result(c)
+    type(TreeNode), pointer, intent(in) :: node
+    integer :: c
+    if (.not. associated(node)) then
+       c = 0
     else
-       h = path_length(node%right, x, depth + 1)
+       c = 1 + count_nodes(node%left) + count_nodes(node%right)
     end if
-  end function path_length
+  end function count_nodes
+
+  recursive subroutine fill(node, t, pos)
+    type(TreeNode), pointer, intent(in) :: node
+    type(Tree), intent(inout) :: t
+    integer, intent(inout) :: pos
+    integer :: me
+
+    pos = pos + 1
+    me = pos
+    t%nsize(me) = node%size
+    if (node%is_leaf) then
+       t%feat(me) = -1
+       t%thr(me) = 0.0_dp
+       t%left(me) = 0
+       t%right(me) = 0
+    else
+       t%feat(me) = node%split_feature
+       t%thr(me) = node%split_value
+       t%left(me) = pos + 1
+       call fill(node%left, t, pos)
+       t%right(me) = pos + 1
+       call fill(node%right, t, pos)
+    end if
+  end subroutine fill
 
   pure function cfactor(n) result(res)
     integer, intent(in) :: n
@@ -305,13 +373,5 @@ contains
        res = 2.0_dp * (log(real(n - 1, dp)) + 0.5772156649_dp) - 2.0_dp * real(n - 1, dp) / real(n, dp)
     end if
   end function cfactor
-
-  recursive subroutine free_node(node)
-    type(TreeNode), pointer, intent(inout) :: node
-    if (.not. associated(node)) return
-    call free_node(node%left)
-    call free_node(node%right)
-    deallocate(node)
-  end subroutine free_node
 
 end module iforest
