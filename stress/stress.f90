@@ -1,5 +1,5 @@
 program stress
-  use iforest, only: dp, IsolationForest, train_forest, predict_scores, &
+  use iforest, only: dp, IsolationForest, train_forest, predict_scores, predict, &
                      free_forest, fit, get_score, release
   implicit none
 
@@ -10,6 +10,7 @@ program stress
   call test_multi_instance()
   call test_refit_loop()
   call test_singleton()
+  call test_predict()
 
   print *, "STRESS OK"
 
@@ -249,6 +250,35 @@ contains
     call assert(so > sn, "singleton outlier scored higher")
     call release()
     print *, "ok: singleton (50x refit)"
+  end subroutine
+
+  ! 200 inliers + 10 far outliers; predict by contamination and by threshold.
+  subroutine test_predict()
+    type(IsolationForest) :: f
+    real(dp) :: X(210, 2)
+    integer :: lab(210), i, nflag
+    real(dp) :: r
+
+    do i = 1, 200
+       call random_number(r); X(i,1) = r
+       call random_number(r); X(i,2) = r
+    end do
+    do i = 201, 210
+       call random_number(r); X(i,1) = 50.0_dp + r
+       call random_number(r); X(i,2) = 50.0_dp + r
+    end do
+    call train_forest(f, X, 210, 128, 100)
+
+    call predict(f, X, 210, lab, contamination=0.05_dp)
+    nflag = sum(lab)
+    call assert(nflag >= 7 .and. nflag <= 16, "predict contamination count")
+    call assert(sum(lab(201:210)) >= 8, "predict contamination flags outliers")
+
+    call predict(f, X, 210, lab, threshold=0.55_dp)
+    call assert(sum(lab(201:210)) >= 8, "predict threshold flags outliers")
+
+    call free_forest(f)
+    print *, "ok: predict (contamination + threshold)"
   end subroutine
 
 end program stress

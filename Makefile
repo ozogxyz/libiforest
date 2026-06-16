@@ -12,10 +12,13 @@ all: $(BIN)
 $(BIN): build/main.o $(LIB)
 	$(FC) $(FFLAGS) $^ -o $@
 
-$(LIB): build/iforest.o
+$(LIB): build/iforest.o build/iforest_c.o
 	ar rcs $@ $^
 
 build/iforest.o: iforest.f90 | build
+	$(FC) $(FFLAGS) -c $< -o $@
+
+build/iforest_c.o: c_api.f90 build/iforest.o | build
 	$(FC) $(FFLAGS) -c $< -o $@
 
 build/main.o: main.f90 build/iforest.o | build
@@ -26,6 +29,11 @@ build:
 
 run: $(BIN)
 	./$(BIN)
+
+cdemo: $(LIB)
+	gcc -c examples/example.c -Iinclude -o build/example.o
+	$(FC) $(FFLAGS) build/example.o $(LIB) -o build/cdemo
+	./build/cdemo
 
 test: $(LIB)
 	$(FC) $(FFLAGS) test/check.f90 $(LIB) -o build/check && ./build/check
@@ -38,4 +46,4 @@ check: test stress
 clean:
 	rm -rf build $(BIN)
 
-.PHONY: all run test stress check clean
+.PHONY: all run cdemo test stress check clean
